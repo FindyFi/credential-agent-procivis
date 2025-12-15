@@ -339,6 +339,10 @@ class Agent {
     return offer;
   }
 
+  async getStatus(id) {
+    return await this.getProofRequest(id);
+  }
+
   /* Vendor-specific methods */
 
   async setOrganization(org) {

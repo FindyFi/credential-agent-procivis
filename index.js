@@ -74,10 +74,10 @@ class Agent {
     }
     this.headers.set("Authorization", `Bearer ${this.auth.token}`);
     const exp = data?.expires_in;
-    if (exp && data.refresh_token) {
+    if (exp) {
       this.auth.refresh_token = data.refresh_token;
-      const ttl = Math.min(new Date().getTime() + exp, MAX_TTL);
-      console.log(`Refreshing token in ${ttl / 1000 / 3600} hours.`);
+      const ttl = Math.min(exp * 1000, this.MAX_TTL);
+      // console.log(`Refreshing token in ${ttl / 1000 / 3600} hours.`);
       if (exp) {
         setTimeout(this.refreshAuthentication, ttl);
       }

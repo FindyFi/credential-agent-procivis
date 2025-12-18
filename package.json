@@ -1,6 +1,6 @@
 {
   "name": "credential-agent-procivis",
-  "version": "0.0.2",
+  "version": "0.0.4",
   "description": "NPM package for Procivis One Core",
   "keywords": [
     "digital",

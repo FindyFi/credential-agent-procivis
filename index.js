@@ -16,27 +16,30 @@ class Agent {
   }
 
   async authenticate(data) {
-    this.auth = data;
-    if (data.api_token) {
-      this.headers.append("Authorization", `Bearer ${data.api_token}`);
+    if (data) {
+      this.auth = data;
+    }
+    if (this.auth.api_token) {
+      this.headers.append("Authorization", `Bearer ${this.auth.api_token}`);
       return true;
     }
-    if (data.client_id && data.client_secret && data.token_endpoint) {
+    if (this.auth.client_id && this.auth.client_secret && this.auth.token_endpoint) {
       const query = new URLSearchParams();
-      query.append("client_id", data.client_id);
-      query.append("client_secret", data.client_secret);
+      query.append("client_id", this.auth.client_id);
+      query.append("client_secret", this.auth.client_secret);
       query.append("grant_type", "client_credentials");
-      const response = await fetch(data.token_endpoint, {
+      const response = await fetch(this.auth.token_endpoint, {
         method: "POST",
         body: query,
       });
       if (!response.ok) {
-        console.error(response.status, data.token_endpoint);
+        console.error(response.status, this.auth.token_endpoint);
         console.log(query.toString());
         console.log(JSON.stringify(await response.json(), null, 1));
         throw new Error("Authentication failed!");
       }
       const json = await response.json();
+      console.log(json);
       if (!json) {
         throw new Error("Authentication failed!");
       }
@@ -44,27 +47,6 @@ class Agent {
       return true;
     }
     return false;
-  }
-
-  async refreshAuthentication() {
-    const params = {
-      method: "POST",
-      body: JSON.stringify({
-        client_id: this.auth.client_id,
-        refresh_token: this.auth.refresh_token,
-        grant_type: "refresh_token",
-      }),
-    };
-    const response = await fetch(this.auth.token_endpoint, params);
-    if (!response.ok) {
-      throw new Error("Auth refresh failed!");
-    }
-    const json = await response.json();
-    if (!json) {
-      throw new Error("Auth refresh failed!");
-    }
-    await this.setAuthParams(json);
-    return true;
   }
 
   async setAuthParams(data) {
@@ -75,11 +57,10 @@ class Agent {
     this.headers.set("Authorization", `Bearer ${this.auth.token}`);
     const exp = data?.expires_in;
     if (exp) {
-      this.auth.refresh_token = data.refresh_token;
       const ttl = Math.min(exp * 1000, this.MAX_TTL);
       // console.log(`Refreshing token in ${ttl / 1000 / 3600} hours.`);
       if (exp) {
-        setTimeout(this.refreshAuthentication, ttl);
+        setTimeout(() => { this.authenticate() }, ttl);
       }
     }
     return data;

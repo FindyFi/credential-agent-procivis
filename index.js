@@ -39,7 +39,6 @@ class Agent {
         throw new Error("Authentication failed!");
       }
       const json = await response.json();
-      console.log(json);
       if (!json) {
         throw new Error("Authentication failed!");
       }
@@ -242,6 +241,9 @@ class Agent {
     */
 
     const cred = await this.createCredential(data);
+    if (!cred || !cred.id) {
+      throw new Error("Failed to create credential");
+    }
     return this.api("POST", `/credential/v1/${encodeURIComponent(cred.id)}/share`);
   }
 
@@ -315,6 +317,9 @@ class Agent {
       delete data.clientIdScheme;
     }
     const request = await this.createProofRequest(data);
+    if (!request || !request.id) {
+      throw new Error("Failed to create proof request");
+    }
     const offer = await this.api("POST", `/proof-request/v1/${encodeURIComponent(request.id)}/share`, shareParams);
     offer.id = request.id;
     return offer;

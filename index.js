@@ -68,7 +68,7 @@ class Agent {
   async api(method, path, body = {}) {
     let url = `${this.options.api_base}${path}`;
     const options = { method, headers: this.headers };
-    if (this.org) {
+    if (this.org && !path.includes("/credential/v1") && !path.includes("/proof-request/v1")) {
       body.organisationId = body.organisationId || this.org?.id;
     }
     if (method == "POST" || method == "PATCH" || method == "PUT") {
@@ -310,10 +310,12 @@ class Agent {
     }
     */
     const shareParams = {
-      clientIdScheme: "redirect_uri"
+      params: {
+        clientIdScheme: "redirect_uri"
+      }
     }
     if (data.clientIdScheme) {
-      shareParams.clientIdScheme = data.clientIdScheme;
+      shareParams.params.clientIdScheme = data.clientIdScheme;
       delete data.clientIdScheme;
     }
     const request = await this.createProofRequest(data);

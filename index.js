@@ -209,11 +209,11 @@ class Agent {
   }
 
   async createCredentialSchema(data) {
-    return this.api("POST", "/credential-schema/v1", data);
+    return this.api("POST", "/credential-schema/v2", data);
   }
 
   async getCredentialSchemas(params) {
-    return this.api("GET", "/credential-schema/v1", params);
+    return this.api("GET", "/credential-schema/v2", params);
   }
 
   async getCredentialSchema(id) {

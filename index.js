@@ -217,7 +217,7 @@ class Agent {
   }
 
   async getCredentialSchema(id) {
-    return this.api("GET", `/credential-schema/v1/${encodeURIComponent(id)}`);
+    return this.api("GET", `/credential-schema/v2/${encodeURIComponent(id)}`);
   }
 
   async deleteCredentialSchema(id) {
@@ -374,11 +374,11 @@ class Agent {
   }
 
   async importCredentialSchema(data) {
-    return this.api("POST", "/credential-schema/v1/import", data);
+    return this.api("POST", "/credential-schema/v2/import", data);
   }
 
   async shareCredentialSchema(id) {
-    return this.api("POST", `/credential-schema/v1/${encodeURIComponent(id)}/share`);
+    return this.api("POST", `/credential-schema/v2/${encodeURIComponent(id)}/share`);
   }
 
   async createCredential(data) {

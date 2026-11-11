@@ -1,3 +1,6 @@
+const MAX_TTL = 2 ** 31 - 1; // setTimeout accepts max 32 bit integers
+const TIMEOUT = 30000; // ms per request
+
 // Endpoints that accept organisationId; the others reject unknown fields.
 const ORG_SCOPED_LISTS = [
   "/key/v1",
@@ -44,11 +47,10 @@ function upgradeCredentialSchema(schema) {
 }
 
 class Agent {
-  MAX_TTL = Math.pow(2, 31) - 1; // setTimeout accepts max 32 bit integers
-
   // private, so credentials and the token don't show up when the agent is logged
   #auth = {};
   #headers;
+  #renewal;
 
   constructor(options = {}) {
     if (!options.api_base) {
@@ -78,6 +80,7 @@ class Agent {
     const response = await fetch(token_endpoint, {
       method: "POST",
       body: new URLSearchParams({ client_id, client_secret, grant_type: "client_credentials" }),
+      signal: AbortSignal.timeout(TIMEOUT),
     });
     if (!response.ok) {
       console.error(response.status, token_endpoint, await response.text());
@@ -93,22 +96,33 @@ class Agent {
     }
     this.#headers.set("Authorization", `Bearer ${data.access_token}`);
     if (data.expires_in) {
-      setTimeout(() => { this.authenticate() }, Math.min(data.expires_in * 1000, this.MAX_TTL));
+      this.#renewIn(data.expires_in * 900); // at 90% of the token lifetime
     }
     return data;
+  }
+
+  // unref() so the timer doesn't keep the process alive; a failed renewal is retried every minute
+  #renewIn(ms) {
+    clearTimeout(this.#renewal);
+    this.#renewal = setTimeout(() => {
+      this.authenticate().catch((error) => {
+        console.error("Token renewal failed, retrying in a minute:", error.message);
+        this.#renewIn(60000);
+      });
+    }, Math.min(ms, MAX_TTL)).unref();
   }
 
   async api(method, path, body = {}) {
     body = { ...body }; // never modify the caller's object
     let url = `${this.options.api_base}${path}`;
-    const options = { method, headers: this.#headers };
-    const orgScoped = method == "GET" ? ORG_SCOPED_LISTS : method == "POST" ? ORG_SCOPED_BODIES : [];
+    const options = { method, headers: this.#headers, signal: AbortSignal.timeout(TIMEOUT) };
+    const orgScoped = method === "GET" ? ORG_SCOPED_LISTS : method === "POST" ? ORG_SCOPED_BODIES : [];
     if (this.org?.id && orgScoped.includes(path) && body.organisationId === undefined) {
       body.organisationId = this.org.id;
     }
-    if (method == "POST" || method == "PATCH" || method == "PUT") {
+    if (method === "POST" || method === "PATCH" || method === "PUT") {
       options.body = JSON.stringify(body);
-    } else if (method == "GET") {
+    } else if (method === "GET") {
       body.page = body.page !== undefined ? body.page : 0;
       body.pageSize = body.pageSize !== undefined ? body.pageSize : 20;
       const queryParams = new URLSearchParams(body);
@@ -127,7 +141,7 @@ class Agent {
     } else {
       data = await resp.text();
     }
-    if (method == "GET" && data.totalPages > body.page + 1) {
+    if (method === "GET" && data.totalPages > body.page + 1) {
       body.page++;
       const nextPageData = await this.api(method, path, body);
       if (nextPageData && nextPageData.values) {
@@ -138,8 +152,11 @@ class Agent {
   }
 
   // /system endpoints live at the server root, not under api_base
-  async system(path) {
-    return fetch(`${this.options.api_base.replace(/\/api$/, "")}${path}`, { headers: this.#headers });
+  async #system(path) {
+    return fetch(`${this.options.api_base.replace(/\/api$/, "")}${path}`, {
+      headers: this.#headers,
+      signal: AbortSignal.timeout(TIMEOUT),
+    });
   }
 
   /* Generic credential agent methods */
@@ -326,7 +343,7 @@ class Agent {
   }
 
   async getVersion() {
-    const resp = await this.system("/system/build-info");
+    const resp = await this.#system("/system/build-info");
     if (!resp.ok) {
       console.error(resp.status, "GET /system/build-info");
       return false;
@@ -335,7 +352,7 @@ class Agent {
   }
 
   async health() {
-    const resp = await this.system("/system/health/liveness");
+    const resp = await this.#system("/system/health/liveness");
     return resp.ok;
   }
 

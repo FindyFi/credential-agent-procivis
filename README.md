@@ -46,7 +46,7 @@ See `index.js` for the full list of methods.
 
 ### Good to know
 
-- **Errors:** a failed call returns `false` and logs the HTTP status, method, path and the server's error code and message. Tokens and request data are not logged. These throw instead: `new Agent()` without `api_base`, `authenticate()` without credentials or when login fails, and `createDID()`, `issueCredential()` and `requestCredential()` when creating the DID, credential or proof request fails.
+- **Errors:** a failed call returns `false` and logs the HTTP status, method, path and the server's error code and message. Tokens and request data are not logged. These throw instead: `new Agent()` without `api_base`, `authenticate()` without credentials or when login fails, and `createDID()`, `issueCredential()` and `requestCredential()` when creating the DID, credential or proof request fails. Network errors and requests taking over 30 seconds also throw.
 - **Health:** `health()` checks the server's liveness endpoint and returns `true` or `false`.
 - **Lists:** `get…s()` methods fetch all pages and return them in one `values` array.
 - **Organisation:** the organisation from `setOrganization()` is added automatically where the API accepts it; pass `organisationId` yourself to override it.
@@ -83,6 +83,9 @@ Support for One Core v1.90.0.
 - `getTrustEntity()` returns `false` without calling the server; the endpoint no longer exists in One Core.
 - `new Agent()` requires `api_base` and no longer logs in by itself; call `authenticate()`. `authenticate()` throws when no credentials are given.
 - Calling `authenticate()` again replaces the `Authorization` header instead of adding a second one.
+- Client-credentials tokens are renewed at 90% of their lifetime. A failed renewal is logged and retried every minute instead of crashing the process, and the renewal timer no longer keeps the process alive.
+- Requests time out after 30 seconds.
+- The package exports only its root (`exports` in package.json); importing internal files is no longer possible.
 - `requestCredential()` throws if sharing the proof request fails.
 - Logs contain only the HTTP status, path and the server's error code and message: no tokens or request data. Credentials and the token are no longer visible when the agent object is logged.
 - Objects passed to the agent are no longer modified.
@@ -105,3 +108,7 @@ Support for One Core v1.90.0.
 ### 0.0.1 – 0.0.5 (2025-12-15 – 2025-12-18)
 
 - First releases: the `Agent` class, `getStatus()`, and token renewal by re-authenticating.
+
+## License
+
+Apache-2.0, see [LICENSE](LICENSE).

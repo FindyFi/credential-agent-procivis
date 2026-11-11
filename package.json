@@ -1,8 +1,10 @@
 {
   "name": "credential-agent-procivis",
   "version": "0.1.0",
-  "description": "NPM package for Procivis One Core",
+  "description": "Dependency-free JavaScript client for the Procivis One Core REST API (OpenID4VCI issuance, OpenID4VP verification)",
   "keywords": [
+    "procivis",
+    "one-core",
     "digital",
     "credentials",
     "oid4vc",
@@ -24,7 +26,7 @@
   "license": "Apache-2.0",
   "author": "Samuel Rinnetmäki <samuel@iki.fi>",
   "type": "module",
-  "main": "index.js",
+  "exports": "./index.js",
   "engines": {
     "node": ">=22"
   },
@@ -32,6 +34,7 @@
     "index.js"
   ],
   "scripts": {
+    "prepublishOnly": "node -e \"import('./index.js').then((m) => process.exit(m.Agent ? 0 : 1))\"",
     "test:live": "node --env-file=.env test/live.js"
   }
 }

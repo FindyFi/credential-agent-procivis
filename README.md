@@ -47,7 +47,8 @@ See `index.js` for the full list of methods.
 ### Good to know
 
 - **Errors:** a failed call returns `false` and logs the HTTP status, method, path and the server's error code and message. Tokens and request data are not logged. These throw instead: `new Agent()` without `api_base`, `authenticate()` without credentials or when login fails, and `createDID()`, `issueCredential()` and `requestCredential()` when creating the DID, credential or proof request fails. Network errors and requests taking over 30 seconds also throw.
-- **Health:** `health()` checks the server's liveness endpoint and returns `true` or `false`.
+- **Health:** `health()` checks the server's liveness endpoint and returns `true` or `false` (also `false` when the server can't be reached).
+- **HTTPS:** use `https://` URLs for `api_base` and `token_endpoint`. Plain `http://` is not rejected, but it would send tokens unencrypted.
 - **Lists:** `get…s()` methods fetch all pages and return them in one `values` array.
 - **Organisation:** the organisation from `setOrganization()` is added automatically where the API accepts it; pass `organisationId` yourself to override it.
 - **Older field names:** credential schemas written for One Core before v1.90 (`formats[].schemaId`, `requiresWalletInstanceAttestation`, `keyStorageSecurity`, and the `schemaId` list filter) are translated to the new names.
@@ -87,7 +88,8 @@ Support for One Core v1.90.0.
 - Requests time out after 30 seconds.
 - The package exports only its root (`exports` in package.json); importing internal files is no longer possible.
 - `requestCredential()` throws if sharing the proof request fails.
-- Logs contain only the HTTP status, path and the server's error code and message: no tokens or request data. Credentials and the token are no longer visible when the agent object is logged.
+- Logs contain only the HTTP status, path and the server's error code and message (for a failed login, the OAuth `error` and `error_description`): no tokens or request data. Credentials and the token are no longer visible when the agent object is logged, and `setAuthParams()` is no longer public.
+- Query parameters set to `undefined` are left out instead of being sent as the text "undefined".
 - Objects passed to the agent are no longer modified.
 - Added the live test (`npm run test:live`) and the Apache-2.0 license text.
 - Requires Node.js 22 or later (Node.js 20 is end of life).

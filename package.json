@@ -25,6 +25,9 @@
   },
   "license": "Apache-2.0",
   "author": "Samuel Rinnetmäki <samuel@iki.fi>",
+  "contributors": [
+    "Aleksi Autio"
+  ],
   "type": "module",
   "exports": "./index.js",
   "engines": {

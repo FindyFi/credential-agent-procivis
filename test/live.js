@@ -403,7 +403,7 @@ out("       revoke/suspend/reactivateCredential, deleteClaimData: need a wallet 
 out("       importCredentialSchema/importVerificationSchema: would duplicate into the same organisation");
 out("       createOrganization, getCertificate: skipped (permanent object / no certificate at hand)");
 
-if (env.PROCIVIS_KEEP) {
+if (env.PROCIVIS_KEEP === "1") {
   out(`\n== Cleanup skipped (PROCIVIS_KEEP). Created: ${JSON.stringify(created)}`);
 } else {
   out("\n== Cleanup");

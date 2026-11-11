@@ -83,14 +83,15 @@ class Agent {
       signal: AbortSignal.timeout(TIMEOUT),
     });
     if (!response.ok) {
-      console.error(response.status, token_endpoint, await response.text());
+      const error = await response.json().catch(() => ({}));
+      console.error(response.status, token_endpoint, error.error ?? "", error.error_description ?? "");
       throw new Error("Authentication failed!");
     }
-    await this.setAuthParams(await response.json());
+    await this.#setAuthParams(await response.json());
     return true;
   }
 
-  async setAuthParams(data) {
+  async #setAuthParams(data) {
     if (!data?.access_token) {
       throw new Error("Authentication failed!");
     }
@@ -125,12 +126,12 @@ class Agent {
     } else if (method === "GET") {
       body.page = body.page !== undefined ? body.page : 0;
       body.pageSize = body.pageSize !== undefined ? body.pageSize : 20;
-      const queryParams = new URLSearchParams(body);
+      const queryParams = new URLSearchParams(Object.entries(body).filter(([, value]) => value !== undefined));
       url = `${url}?${queryParams.toString()}`;
     }
     const resp = await fetch(url, options);
     if (!resp.ok) {
-      // only the error code: the request and the server's error cause can hold tokens or personal data
+      // only the code and message: the request and the server's error cause can hold tokens or personal data
       const error = await resp.json().catch(() => ({}));
       console.error(resp.status, method, `${this.options.api_base}${path}`, error.code ?? "", error.message ?? "");
       return false;
@@ -352,8 +353,11 @@ class Agent {
   }
 
   async health() {
-    const resp = await this.#system("/system/health/liveness");
-    return resp.ok;
+    try {
+      return (await this.#system("/system/health/liveness")).ok;
+    } catch {
+      return false;
+    }
   }
 
   async getCertificate(id) {

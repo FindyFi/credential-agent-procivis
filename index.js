@@ -1,95 +1,112 @@
-class Agent {
-  MAX_TTL = Math.pow(2, 31) - 1; // setTimeout accepts max 32 bit integers
+const MAX_TTL = 2 ** 31 - 1; // setTimeout accepts max 32 bit integers
+const TIMEOUT = 30000; // ms per request
 
-  constructor(options) {
-    this.options = options || {};
+// Endpoints that accept organisationId; the others reject unknown fields.
+const ORG_SCOPED_LISTS = [
+  "/key/v1",
+  "/identifier/v1",
+  "/credential-schema/v2",
+  "/proof-schema/v1",
+  "/credential/v1",
+  "/proof-request/v1",
+];
+const ORG_SCOPED_BODIES = [
+  "/key/v1",
+  "/identifier/v1",
+  "/credential-schema/v2",
+  "/credential-schema/v2/import",
+  "/proof-schema/v1",
+  "/proof-schema/v1/import",
+];
+
+class Agent {
+  // private, so credentials and the token don't show up when the agent is logged
+  #auth = {};
+  #headers;
+  #renewal;
+
+  constructor(options = {}) {
+    if (!options.api_base) {
+      throw new Error("api_base is required");
+    }
+    this.options = { api_base: options.api_base.replace(/\/+$/, "") };
     this.schemas = options.schemas || {};
-    this.headers = new Headers({
+    this.#headers = new Headers({
       Accept: "application/json",
       "Content-Type": "application/json",
       ...options.headers,
     });
-    this.auth = options.auth || {};
-    if (options.auth) {
-      this.authenticate(this.auth);
-    }
   }
 
   async authenticate(data) {
     if (data) {
-      this.auth = data;
+      this.#auth = { ...data };
     }
-    if (this.auth.api_token) {
-      this.headers.append("Authorization", `Bearer ${this.auth.api_token}`);
+    const { api_token, client_id, client_secret, token_endpoint } = this.#auth;
+    if (api_token) {
+      this.#headers.set("Authorization", `Bearer ${api_token}`);
       return true;
     }
-    if (this.auth.client_id && this.auth.client_secret && this.auth.token_endpoint) {
-      const query = new URLSearchParams();
-      query.append("client_id", this.auth.client_id);
-      query.append("client_secret", this.auth.client_secret);
-      query.append("grant_type", "client_credentials");
-      const response = await fetch(this.auth.token_endpoint, {
-        method: "POST",
-        body: query,
-      });
-      if (!response.ok) {
-        console.error(response.status, this.auth.token_endpoint);
-        console.log(query.toString());
-        console.log(JSON.stringify(await response.json(), null, 1));
-        throw new Error("Authentication failed!");
-      }
-      const json = await response.json();
-      if (!json) {
-        throw new Error("Authentication failed!");
-      }
-      await this.setAuthParams(json);
-      return true;
+    if (!client_id || !client_secret || !token_endpoint) {
+      throw new Error("authenticate() needs api_token, or client_id, client_secret and token_endpoint");
     }
-    return false;
-  }
-
-  async setAuthParams(data) {
-    this.auth.token = data.access_token;
-    if (!this.auth.token) {
+    const response = await fetch(token_endpoint, {
+      method: "POST",
+      body: new URLSearchParams({ client_id, client_secret, grant_type: "client_credentials" }),
+      signal: AbortSignal.timeout(TIMEOUT),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      console.error(response.status, token_endpoint, error.error ?? "", error.error_description ?? "");
       throw new Error("Authentication failed!");
     }
-    this.headers.set("Authorization", `Bearer ${this.auth.token}`);
-    const exp = data?.expires_in;
-    if (exp) {
-      const ttl = Math.min(exp * 1000, this.MAX_TTL);
-      // console.log(`Refreshing token in ${ttl / 1000 / 3600} hours.`);
-      if (exp) {
-        setTimeout(() => { this.authenticate() }, ttl);
-      }
+    await this.#setAuthParams(await response.json());
+    return true;
+  }
+
+  async #setAuthParams(data) {
+    if (!data?.access_token) {
+      throw new Error("Authentication failed!");
+    }
+    this.#headers.set("Authorization", `Bearer ${data.access_token}`);
+    if (data.expires_in) {
+      this.#renewIn(data.expires_in * 900); // at 90% of the token lifetime
     }
     return data;
   }
 
+  // unref() so the timer doesn't keep the process alive; a failed renewal is retried every minute
+  #renewIn(ms) {
+    clearTimeout(this.#renewal);
+    this.#renewal = setTimeout(() => {
+      this.authenticate().catch((error) => {
+        console.error("Token renewal failed, retrying in a minute:", error.message);
+        this.#renewIn(60000);
+      });
+    }, Math.min(ms, MAX_TTL)).unref();
+  }
+
   async api(method, path, body = {}) {
+    body = { ...body }; // never modify the caller's object
     let url = `${this.options.api_base}${path}`;
-    const options = { method, headers: this.headers };
-    if (this.org && !path.includes("/credential/v1") && !path.includes("/proof-request/v1")) {
-      body.organisationId = body.organisationId || this.org?.id;
+    const options = { method, headers: this.#headers, signal: AbortSignal.timeout(TIMEOUT) };
+    const orgScoped = method === "GET" ? ORG_SCOPED_LISTS : method === "POST" ? ORG_SCOPED_BODIES : [];
+    if (this.org?.id && orgScoped.includes(path) && body.organisationId === undefined) {
+      body.organisationId = this.org.id;
     }
-    if (method == "POST" || method == "PATCH" || method == "PUT") {
+    if (method === "POST" || method === "PATCH" || method === "PUT") {
       options.body = JSON.stringify(body);
-    } else {
+    } else if (method === "GET") {
       body.page = body.page !== undefined ? body.page : 0;
       body.pageSize = body.pageSize !== undefined ? body.pageSize : 20;
-      const queryParams = new URLSearchParams(body);
+      const queryParams = new URLSearchParams(Object.entries(body).filter(([, value]) => value !== undefined));
       url = `${url}?${queryParams.toString()}`;
     }
     const resp = await fetch(url, options);
-    // console.log(resp.status, method, url, headers, JSON.stringify(body, null, 1))
     if (!resp.ok) {
-      console.error(
-        resp.status,
-        method,
-        url,
-        this.headers,
-        JSON.stringify(body, null, 1)
-      );
-      console.log(await resp.text());
+      // only the code and message: the request and the server's error cause can hold tokens or personal data
+      const error = await resp.json().catch(() => ({}));
+      console.error(resp.status, method, `${this.options.api_base}${path}`, error.code ?? "", error.message ?? "");
       return false;
     }
     let data;
@@ -98,15 +115,22 @@ class Agent {
     } else {
       data = await resp.text();
     }
-    if (data.totalPages > body.page + 1) {
+    if (method === "GET" && data.totalPages > body.page + 1) {
       body.page++;
       const nextPageData = await this.api(method, path, body);
       if (nextPageData && nextPageData.values) {
         data.values = data.values.concat(nextPageData.values);
       }
     }
-    // console.log('Response: ', JSON.stringify(data, null, 1))
     return data;
+  }
+
+  // /system endpoints live at the server root, not under api_base
+  async #system(path) {
+    return fetch(`${this.options.api_base.replace(/\/api$/, "")}${path}`, {
+      headers: this.#headers,
+      signal: AbortSignal.timeout(TIMEOUT),
+    });
   }
 
   /* Generic credential agent methods */
@@ -119,7 +143,11 @@ class Agent {
     return this.api("GET", "/organisation/v1", params);
   }
 
+  // Without an id, returns the organisation set with setOrganization()
   async getOrganization(id) {
+    if (id == null) {
+      return this.org;
+    }
     return this.api("GET", `/organisation/v1/${encodeURIComponent(id)}`);
   }
 
@@ -152,26 +180,6 @@ class Agent {
   }
 
   async createDID(data) {
-    /* example data where key is in the format returned by addKey() or getKey()
-    {
-      name: 'issuer.example.com',
-      did: {
-        method: 'WEB',
-        name: 'issuer.example.com',
-        keys: {
-          authentication: [key],
-          assertionMethod: [key],
-          keyAgreement: [key],
-          capabilityInvocation: [key],
-          capabilityDelegation: [key]
-        },
-        params: {
-          externalHostingUrl: `https://issuer.example.com`
-        }
-      }
-    }
-    */
-
     if (!data.name || !data.method || !data.keys) {
       throw new Error("DID data must include name, method, and keys");
     }
@@ -194,9 +202,8 @@ class Agent {
     return this.api("POST", "/identifier/v1", params);
   }
 
-  async getDIDs(params) {
-    params['types[]'] = 'DID';
-    return this.api("GET", "/identifier/v1", params);
+  async getDIDs(params = {}) {
+    return this.api("GET", "/identifier/v1", { ...params, "types[]": "DID" });
   }
 
   async getDID(id) {
@@ -204,7 +211,6 @@ class Agent {
   }
 
   async deleteDID(id) {
-    // return this.api("PATCH", `/did/v1/${encodeURIComponent(id)}`, { deactivated: true });
     return this.api("DELETE", `/identifier/v1/${encodeURIComponent(id)}`);
   }
 
@@ -228,23 +234,15 @@ class Agent {
   }
 
   async issueCredential(data) {
-    /* example data:
-    {
-      credentialSchemaId: credentialSchemaId,
-      issuerDid: did,
-      issuerKey: key,
-      protocol: 'OPENID4VCI_FINAL1',
-      claimValues: [
-        { claimId: uuid, value: 'Alice', path: 'firstName' }
-      ]
-    }
-    */
-
     const cred = await this.createCredential(data);
     if (!cred || !cred.id) {
       throw new Error("Failed to create credential");
     }
-    return this.api("POST", `/credential/v1/${encodeURIComponent(cred.id)}/share`);
+    const offer = await this.api("POST", `/credential/v1/${encodeURIComponent(cred.id)}/share`);
+    if (offer) {
+      offer.id = cred.id;
+    }
+    return offer;
   }
 
   async revokeCredential(id) {
@@ -263,25 +261,6 @@ class Agent {
   }
 
   async createVerificationSchema(data) {
-    /* example data:
-    {
-      "expireDuration": 0,
-      "name": "nameVerificationSchema",
-      "organisationId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-      "proofInputSchemas": [
-        {
-          "claimSchemas": [
-            {
-              "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-              "required": true
-            }
-          ],
-          "credentialSchemaId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-          "validityConstraint": 0
-        }
-      ]
-    }
-    */
     return this.api("POST", "/proof-schema/v1", data);
   }
 
@@ -300,35 +279,26 @@ class Agent {
     );
   }
 
-  async requestCredential(data,) {
-    /* example data:
-    {
-      "credentialSchemaId": verificationSchema,
-      "protocol": "OPENID4VCI_FINAL1",
-      "verifierDid": did,
-      "clientIdScheme": "redirect_uri"
-    }
-    */
-    const shareParams = {
-      params: {
-        clientIdScheme: "redirect_uri"
-      }
-    }
-    if (data.clientIdScheme) {
-      shareParams.params.clientIdScheme = data.clientIdScheme;
-      delete data.clientIdScheme;
-    }
-    const request = await this.createProofRequest(data);
+  async requestCredential(data) {
+    const { clientIdScheme = "redirect_uri", ...proofRequest } = data;
+    const request = await this.createProofRequest(proofRequest);
     if (!request || !request.id) {
       throw new Error("Failed to create proof request");
     }
-    const offer = await this.api("POST", `/proof-request/v1/${encodeURIComponent(request.id)}/share`, shareParams);
+    const offer = await this.api(
+      "POST",
+      `/proof-request/v1/${encodeURIComponent(request.id)}/share`,
+      { params: { clientIdScheme } }
+    );
+    if (!offer) {
+      throw new Error("Failed to share proof request");
+    }
     offer.id = request.id;
     return offer;
   }
 
   async getStatus(id) {
-    return await this.getProofRequest(id);
+    return this.getProofRequest(id);
   }
 
   /* Vendor-specific methods */
@@ -337,20 +307,25 @@ class Agent {
     this.org = org;
   }
 
-  async getOrganization() {
-    return this.org
-  }
-
   async getConfiguration() {
     return this.api("GET", "/config/v1");
   }
 
   async getVersion() {
-    return this.api("GET", "/build-info");
+    const resp = await this.#system("/system/build-info");
+    if (!resp.ok) {
+      console.error(resp.status, "GET /system/build-info");
+      return false;
+    }
+    return resp.json();
   }
 
   async health() {
-    return this.api("GET", "/health");
+    try {
+      return (await this.#system("/system/health/liveness")).ok;
+    } catch {
+      return false;
+    }
   }
 
   async getCertificate(id) {
@@ -365,8 +340,10 @@ class Agent {
     );
   }
 
+  // Removed from One Core; see POST /identifier/v1/resolve-trust-entries
   async getTrustEntity(id) {
-    return this.api("GET", `/did/v1/${encodeURIComponent(id)}/trust-entity`);
+    console.warn("getTrustEntity() is not supported by One Core v1.79 and later");
+    return false;
   }
 
   async resolveDID(did) {
@@ -398,13 +375,6 @@ class Agent {
   }
 
   async checkRevocationStatus(data) {
-    /* example data:
-    {
-      credentialIds: [uuid1, uuid2, ...],
-      forceRefresh: true
-    }
-    */
-    const id = data.id;
     return this.api("POST", `/credential/v1/revocation-check`, data);
   }
 
@@ -427,7 +397,7 @@ class Agent {
   async getProofRequest(id) {
     return this.api("GET", `/proof-request/v1/${encodeURIComponent(id)}`);
   }
-  
+
   async deleteProofRequest(id) {
     return this.api("DELETE", `/proof-request/v1/${encodeURIComponent(id)}`);
   }

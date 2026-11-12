@@ -51,7 +51,20 @@ See `index.js` for the full list of methods.
 - **HTTPS:** use `https://` URLs for `api_base` and `token_endpoint`. Plain `http://` is not rejected, but it would send tokens unencrypted.
 - **Lists:** `get…s()` methods fetch all pages and return them in one `values` array.
 - **Organisation:** the organisation from `setOrganization()` is added automatically where the API accepts it; pass `organisationId` yourself to override it.
-- **Older field names:** credential schemas written for One Core before v1.90 (`formats[].schemaId`, `requiresWalletInstanceAttestation`, `keyStorageSecurity`, and the `schemaId` list filter) are translated to the new names.
+## Migrating credential schemas to One Core v1.90
+
+One Core v1.90 renamed some credential schema fields and rejects the old names. The agent sends schemas as they are, so update schema files written for older versions with the command that comes with the package:
+
+```sh
+npx upgrade-credential-schema credentialschema.json > credentialschema.new.json
+mv credentialschema.new.json credentialschema.json
+```
+
+(Write to a new file first: redirecting straight into the input file empties it.) Without the package installed, use `npx -p credential-agent-procivis upgrade-credential-schema …`.
+
+It converts `formats[].schemaId` to `formats[].ecosystemSchemaId`, and `requiresWalletInstanceAttestation` and `keyStorageSecurity` to `walletAttestation.requireInstanceAttestation` and `walletAttestation.keyStorageSecurityLevel`. Fields already in the new form are kept, so running it on a migrated file changes nothing. Schemas written inline in code have to be edited by hand, and the `schemaId` filter of `getCredentialSchemas()` has to be replaced with `"ecosystemSchemaIds[]"`.
+
+Later credential schema changes will be added to the same command.
 
 ## Testing
 
@@ -75,7 +88,7 @@ npm run test:live
 
 Support for One Core v1.90.0.
 
-- Credential schemas: older field names (`formats[].schemaId`, `requiresWalletInstanceAttestation`, `keyStorageSecurity`) and the `schemaId` list filter are translated to the v1.90 names.
+- **Breaking:** credential schemas must use the v1.90 field names (`formats[].ecosystemSchemaId`, `walletAttestation`), and the list filter is `ecosystemSchemaIds[]`. The new `upgrade-credential-schema` command converts older schema files; see [Migrating credential schemas](#migrating-credential-schemas-to-one-core-v190).
 - The organisation is added only to requests that accept it. Fixes `updateOrganization()` and `generateCSR()`; `getCredentials()` and `getProofRequests()` now use the organisation set with `setOrganization()`.
 - `issueCredential()` also returns the credential `id`.
 - `getVersion()` and `health()` use the `/system` endpoints. `health()` now returns `true` or `false`.

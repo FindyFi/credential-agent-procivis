@@ -19,33 +19,6 @@ const ORG_SCOPED_BODIES = [
   "/proof-schema/v1/import",
 ];
 
-// Maps pre-v1.90 credential schema fields to their new names; new fields win.
-function upgradeCredentialSchema(schema) {
-  if (!schema || typeof schema !== "object") {
-    return schema;
-  }
-  const { requiresWalletInstanceAttestation, keyStorageSecurity, ...upgraded } = schema;
-  if (Array.isArray(schema.formats)) {
-    upgraded.formats = schema.formats.map(({ schemaId, ...format }) => ({
-      ...format,
-      ...(format.ecosystemSchemaId === undefined && schemaId !== undefined
-        ? { ecosystemSchemaId: schemaId }
-        : {}),
-    }));
-  }
-  const walletAttestation = { ...schema.walletAttestation };
-  if (requiresWalletInstanceAttestation && walletAttestation.requireInstanceAttestation === undefined) {
-    walletAttestation.requireInstanceAttestation = true;
-  }
-  if (keyStorageSecurity != null && walletAttestation.keyStorageSecurityLevel === undefined) {
-    walletAttestation.keyStorageSecurityLevel = keyStorageSecurity;
-  }
-  if (Object.keys(walletAttestation).length > 0) {
-    upgraded.walletAttestation = walletAttestation;
-  }
-  return upgraded;
-}
-
 class Agent {
   // private, so credentials and the token don't show up when the agent is logged
   #auth = {};
@@ -242,16 +215,11 @@ class Agent {
   }
 
   async createCredentialSchema(data) {
-    return this.api("POST", "/credential-schema/v2", upgradeCredentialSchema(data));
+    return this.api("POST", "/credential-schema/v2", data);
   }
 
-  // schemaId is the pre-v1.90 name of the ecosystemSchemaIds[] filter
-  async getCredentialSchemas(params = {}) {
-    const { schemaId, ...query } = params;
-    if (schemaId !== undefined && query["ecosystemSchemaIds[]"] === undefined) {
-      query["ecosystemSchemaIds[]"] = schemaId;
-    }
-    return this.api("GET", "/credential-schema/v2", query);
+  async getCredentialSchemas(params) {
+    return this.api("GET", "/credential-schema/v2", params);
   }
 
   async getCredentialSchema(id) {
@@ -383,10 +351,7 @@ class Agent {
   }
 
   async importCredentialSchema(data) {
-    return this.api("POST", "/credential-schema/v2/import", {
-      ...data,
-      schema: upgradeCredentialSchema(data?.schema),
-    });
+    return this.api("POST", "/credential-schema/v2/import", data);
   }
 
   async shareCredentialSchema(id) {

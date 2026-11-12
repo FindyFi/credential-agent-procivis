@@ -16,6 +16,7 @@
 // does not match its expectation. Output never contains the auth token.
 
 import { Agent } from "../index.js";
+import { upgradeCredentialSchema } from "../scripts/upgrade-schema.js";
 
 const VERBOSE = process.argv.includes("--verbose");
 const env = process.env;
@@ -245,30 +246,25 @@ const schemaPayload = (suffix, format) => ({
   ],
 });
 const vct = (suffix) => `https://example.com/credentials/${NAME}${suffix}`;
-// The agent translates the pre-v1.90 fields; check the server stored them in the new form.
-const createOldStyle = async (payload, check) => {
-  const r = await agent.createCredentialSchema(payload);
+// v1.90 rejects the pre-1.90 field names; scripts/upgrade-schema.js converts them.
+const oldSchema = {
+  ...schemaPayload("-old", { format: FORMAT, schemaId: vct("-old") }),
+  requiresWalletInstanceAttestation: false,
+  keyStorageSecurity: "HIGH",
+};
+await step("createCredentialSchema() with pre-1.90 field names is rejected", "fail", async () => {
+  const r = await agent.createCredentialSchema(oldSchema);
+  if (r?.id) created.credentialSchemas.push(r.id);
+  must(r?.id, "no id");
+});
+await step("scripts/upgrade-schema.js output is accepted and stored in the new form", "pass", async () => {
+  const r = await agent.createCredentialSchema(upgradeCredentialSchema(oldSchema));
   if (r?.id) created.credentialSchemas.push(r.id);
   must(r?.id, "no id");
   const s = await agent.getCredentialSchema(r.id);
-  check(s);
-};
-await step("createCredentialSchema() old formats[].schemaId is translated", "pass",
-  () => createOldStyle(schemaPayload("-old-schemaId", { format: FORMAT, schemaId: vct("-old-schemaId") }), (s) =>
-    must(s?.formats?.[0]?.ecosystemSchemaId === vct("-old-schemaId"), `formats = ${short(JSON.stringify(s?.formats))}`)));
-await step("createCredentialSchema() old requiresWalletInstanceAttestation is accepted", "pass",
-  () => createOldStyle({ ...schemaPayload("-old-wia", { format: FORMAT, schemaId: vct("-old-wia") }), requiresWalletInstanceAttestation: false }, (s) =>
-    must(s?.walletAttestation?.requireInstanceAttestation === false, `walletAttestation = ${short(JSON.stringify(s?.walletAttestation))}`)));
-await step("createCredentialSchema() old keyStorageSecurity is translated", "pass",
-  () => createOldStyle({ ...schemaPayload("-old-kss", { format: FORMAT, schemaId: vct("-old-kss") }), keyStorageSecurity: "HIGH" }, (s) =>
-    must(s?.walletAttestation?.keyStorageSecurityLevel === "HIGH", `walletAttestation = ${short(JSON.stringify(s?.walletAttestation))}`)));
-await step("createCredentialSchema() does not modify the caller's payload", "pass", async () => {
-  const payload = { ...schemaPayload("-old-copy", { format: FORMAT, schemaId: vct("-old-copy") }), requiresWalletInstanceAttestation: false };
-  const before = JSON.stringify(payload);
-  const r = await agent.createCredentialSchema(payload);
-  if (r?.id) created.credentialSchemas.push(r.id);
-  must(r?.id, "no id");
-  must(JSON.stringify(payload) === before, "payload was modified");
+  must(s?.formats?.[0]?.ecosystemSchemaId === vct("-old"), `formats = ${short(JSON.stringify(s?.formats))}`);
+  must(s?.walletAttestation?.requireInstanceAttestation === false && s?.walletAttestation?.keyStorageSecurityLevel === "HIGH",
+    `walletAttestation = ${short(JSON.stringify(s?.walletAttestation))}`);
 });
 
 const credSchemaId = await step("createCredentialSchema() new ecosystemSchemaId + walletAttestation", "pass", async () => {
@@ -284,8 +280,8 @@ await step("getCredentialSchemas({ name })", "pass", async () => {
   const l = await agent.getCredentialSchemas({ name: NAME, sort: "createdDate", sortDirection: "DESC" });
   must(l?.values?.length >= 1, "schema not listed");
 });
-await step("getCredentialSchemas({ schemaId })  (old filter, used by ips-demo)", "pass", async () => {
-  const l = await agent.getCredentialSchemas({ schemaId: vct("") });
+await step("getCredentialSchemas({ 'ecosystemSchemaIds[]' })", "pass", async () => {
+  const l = await agent.getCredentialSchemas({ "ecosystemSchemaIds[]": vct("") });
   const names = l?.values?.map((v) => v.name) || [];
   must(l?.values?.some((v) => v.id === credSchemaId), `schema not in result: ${short(JSON.stringify(names))}`);
   must(names.every((n) => n.startsWith(NAME)), `filter not applied: ${short(JSON.stringify(names))}`);

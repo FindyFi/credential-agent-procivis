@@ -30,11 +30,15 @@
   ],
   "type": "module",
   "exports": "./index.js",
+  "bin": {
+    "upgrade-credential-schema": "scripts/upgrade-schema.js"
+  },
   "engines": {
     "node": ">=22"
   },
   "files": [
-    "index.js"
+    "index.js",
+    "scripts/upgrade-schema.js"
   ],
   "scripts": {
     "prepublishOnly": "node -e \"import('./index.js').then((m) => process.exit(m.Agent ? 0 : 1))\"",

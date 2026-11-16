@@ -51,6 +51,7 @@ See `index.js` for the full list of methods.
 - **HTTPS:** use `https://` URLs for `api_base` and `token_endpoint`. Plain `http://` is not rejected, but it would send tokens unencrypted.
 - **Lists:** `get…s()` methods fetch all pages and return them in one `values` array.
 - **Organisation:** the organisation from `setOrganization()` is added automatically where the API accepts it; pass `organisationId` yourself to override it.
+
 ## Migrating credential schemas to One Core v1.90
 
 One Core v1.90 renamed some credential schema fields and rejects the old names. The agent sends schemas as they are, so update schema files written for older versions with the command that comes with the package:
@@ -84,7 +85,7 @@ npm run test:live
 
 ## Changelog
 
-### 0.1.0 (unreleased)
+### 0.1.0 (2026-11-16)
 
 Support for One Core v1.90.0.
 
